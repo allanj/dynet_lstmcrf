@@ -102,38 +102,50 @@ class Config:
         build the embedding table
         obtain the word2idx and idx2word as well.
     '''
-    def build_emb_table(self, train_vocab, test_vocab):
+    def build_emb_table(self, train_vocab, test_vocab, insts):
         print("Building the embedding table for vocabulary...")
         scale = np.sqrt(3.0 / self.embedding_dim)
 
         self.word2idx = dict()
         self.idx2word = []
-        self.word2idx[self.PAD] = 0
-        self.idx2word.append(self.PAD)
-        self.word2idx[self.unk] = 1
-        self.unk_id = 1
-        self.idx2word.append(self.unk)
+        # self.word2idx[self.PAD] = 0
+        # self.idx2word.append(self.PAD)
+        # self.word2idx[self.unk] = 0
+        # self.unk_id = 0
+        # self.idx2word.append(self.unk)
 
         self.char2idx[self.unk] = 0
         self.idx2char.append(self.unk)
 
-        for word in train_vocab:
-            self.word2idx[word] = len(self.word2idx)
-            self.idx2word.append(word)
-            for c in word:
-                if c not in self.char2idx:
-                    self.char2idx[c] = len(self.idx2char)
-                    self.idx2char.append(c)
+        for inst in insts:
+            for word in inst.input.words:
+                if word not in self.word2idx:
+                    self.word2idx[word] = len(self.word2idx)
+                    self.idx2word.append(word)
+                    for c in word:
+                        if c not in self.char2idx:
+                            self.char2idx[c] = len(self.idx2char)
+                            self.idx2char.append(c)
 
-        for word in test_vocab:
-            if word not in self.word2idx:
-                self.word2idx[word] = len(self.word2idx)
-                self.idx2word.append(word)
-                for c in word:
-                    if c not in self.char2idx:
-                        self.char2idx[c] = len(self.idx2char)
-                        self.idx2char.append(c)
+        # for word in train_vocab:
+        #     self.word2idx[word] = len(self.word2idx)
+        #     self.idx2word.append(word)
+        #     for c in word:
+        #         if c not in self.char2idx:
+        #             self.char2idx[c] = len(self.idx2char)
+        #             self.idx2char.append(c)
+        #
+        # for word in test_vocab:
+        #     if word not in self.word2idx:
+        #         self.word2idx[word] = len(self.word2idx)
+        #         self.idx2word.append(word)
+        #         for c in word:
+        #             if c not in self.char2idx:
+        #                 self.char2idx[c] = len(self.idx2char)
+        #                 self.idx2char.append(c)
         self.num_char = len(self.idx2char)
+        # self.idx2word.sort()
+        print(self.idx2word)
         # print(self.word2idx)
         print(self.char2idx)
 
@@ -152,18 +164,18 @@ class Config:
         else:
             self.word_embedding = np.empty([len(self.word2idx), self.embedding_dim])
             for word in self.word2idx:
-                self.word_embedding[self.word2idx[word], :] = np.random.uniform(-scale, scale, [1, self.embedding_dim])
+                self.word_embedding[self.word2idx[word], :] = 0.1
+                    # np.random.uniform(-scale, scale, [1, self.embedding_dim])
 
 
     def build_label_idx(self, insts):
+        self.label2idx[self.START_TAG] = len(self.label2idx)
+        self.idx2labels.append(self.START_TAG)
         for inst in insts:
             for label in inst.output:
                 if label not in self.label2idx:
                     self.idx2labels.append(label)
                     self.label2idx[label] = len(self.label2idx)
-
-        self.label2idx[self.START_TAG] = len(self.label2idx)
-        self.idx2labels.append(self.START_TAG)
         self.label2idx[self.STOP_TAG] = len(self.label2idx)
         self.idx2labels.append(self.STOP_TAG)
         self.label_size = len(self.label2idx)

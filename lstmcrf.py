@@ -17,7 +17,8 @@ class BiLSTM_CRF:
 
         self.char_rnn = CharRNN(config, model) if self.use_char_rnn else None
         input_size = self.input_dim if not self.char_rnn else self.input_dim + config.charlstm_hidden_dim
-        self.bilstm = dy.BiRNNBuilder(1, input_size, config.hidden_dim, self.model,dy.LSTMBuilder)
+        # self.bilstm = dy.BiRNNBuilder(1, input_size, config.hidden_dim, self.model,dy.LSTMBuilder)
+
         print("Input to word-level BiLSTM size: %d" % (input_size))
         print("BiLSTM hidden size: %d" % (config.hidden_dim))
         # self.bilstm.set_dropout(config.dropout_bilstm)
@@ -29,13 +30,16 @@ class BiLSTM_CRF:
         # self.tanh_w = self.model.add_parameters((config.tanh_hidden_dim, config.hidden_dim))
         # self.tanh_bias = self.model.add_parameters((config.tanh_hidden_dim,))
 
-        self.linear_w = self.model.add_parameters((self.num_labels, config.hidden_dim))
-        self.linear_bias = self.model.add_parameters((self.num_labels,))
+        linear_w = np.full((self.num_labels, self.input_dim), 0.5)
+        self.linear_w = self.model.add_parameters((self.num_labels, self.input_dim), init=linear_w)
+        # self.linear_bias = self.model.add_parameters((self.num_labels,))
+        print("linear_w: ", linear_w)
 
-        self.transition = self.model.add_lookup_parameters((self.num_labels, self.num_labels))
+        # self.transition = self.model.add_lookup_parameters((self.num_labels, self.num_labels))
         vocab_size = len(config.word2idx)
         self.word2idx = config.word2idx
         print("Word Embedding size: %d x %d" % (vocab_size, self.input_dim))
+        print("embedding: ", config.word_embedding)
         self.word_embedding = self.model.add_lookup_parameters((vocab_size, self.input_dim), init=config.word_embedding)
 
         self.dropout = config.dropout
@@ -66,7 +70,8 @@ class BiLSTM_CRF:
                 embeddings.append(concat)
         lstm_out = self.bilstm.transduce(embeddings)
         # tanh_feats = [dy.tanh(dy.affine_transform([self.tanh_bias, self.tanh_w, rep])) for rep in lstm_out]
-        features = [dy.affine_transform([self.linear_bias, self.linear_w, rep]) for rep in lstm_out]
+
+        features = [dy.affine_transform([dy.zeros((self.num_labels,)), self.linear_w, rep]) for rep in embeddings]
         return features
 
     # computing the negative log-likelihood
@@ -76,8 +81,10 @@ class BiLSTM_CRF:
             embeddings = [dy.dropout(self.word_embedding[w], self.dropout) for w in x]
         else:
             embeddings = [self.word_embedding[w] for w in x]
-        lstm_out = self.bilstm.transduce(embeddings)
-        features = [dy.affine_transform([self.linear_bias, self.linear_w, rep]) for rep in lstm_out]
+        # lstm_out = self.bilstm.transduce(embeddings)
+        # features = [dy.affine_transform([dy.zeros((self.num_labels,)), self.linear_w, rep]) for rep in embeddings]
+        # features = [self.linear_w+  rep for rep in embeddings]/
+        features = [self.linear_w*  rep for rep in embeddings]
         return features
 
     def forward_unlabeled(self, features):
@@ -89,10 +96,10 @@ class BiLSTM_CRF:
             alphas_t = []
             for next_tag in range(self.num_labels):
                 obs_broadcast = dy.concatenate([dy.pick(obs, next_tag)] * self.num_labels)
-                next_tag_expr = for_expr + self.transition[next_tag] + obs_broadcast
+                next_tag_expr = for_expr + obs_broadcast
                 alphas_t.append(log_sum_exp(next_tag_expr, self.num_labels))
             for_expr = dy.concatenate(alphas_t)
-        terminal_expr = for_expr + self.transition[self.label2idx[STOP]]
+        terminal_expr = for_expr
         alpha = log_sum_exp(terminal_expr, self.num_labels)
         return alpha
 
@@ -102,8 +109,8 @@ class BiLSTM_CRF:
         tags = [self.label2idx[w] for w in tags]
         tags = [self.label2idx[START]] + tags
         for i, obs in enumerate(features):
-            score = score + dy.pick(self.transition[tags[i + 1]], tags[i]) + dy.pick(obs, tags[i + 1])
-        labeled_score = score + dy.pick(self.transition[self.label2idx[STOP]], tags[-1])
+            score = score  + dy.pick(obs, tags[i + 1])
+        labeled_score = score
 
         return labeled_score
 
@@ -119,12 +126,12 @@ class BiLSTM_CRF:
         init_vvars = [-1e10] * self.num_labels
         init_vvars[self.label2idx[START]] = 0  # <Start> has all the probability
         for_expr = dy.inputVector(init_vvars)
-        trans_exprs = [self.transition[idx] for idx in range(self.num_labels)]
+        # trans_exprs = [self.transition[idx] for idx in range(self.num_labels)]
         for obs in features:
             bptrs_t = []
             vvars_t = []
             for next_tag in range(self.num_labels):
-                next_tag_expr = for_expr + trans_exprs[next_tag]
+                next_tag_expr = for_expr #+ trans_exprs[next_tag]
                 next_tag_arr = next_tag_expr.npvalue()
                 best_tag_id = np.argmax(next_tag_arr)
                 bptrs_t.append(best_tag_id)
@@ -133,10 +140,11 @@ class BiLSTM_CRF:
 
             backpointers.append(bptrs_t)
         # Perform final transition to terminal
-        terminal_expr = for_expr + trans_exprs[self.label2idx[STOP]]
+        terminal_expr = for_expr #+ trans_exprs[self.label2idx[STOP]]
         terminal_arr = terminal_expr.npvalue()
         best_tag_id = np.argmax(terminal_arr)
         path_score = dy.pick(terminal_expr, best_tag_id)
+        print(path_score.value())
         # Reverse over the backpointers to get the best path
         best_path = [best_tag_id]  # Start with the tag that was best for terminal
         for bptrs_t in reversed(backpointers):

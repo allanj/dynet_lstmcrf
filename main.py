@@ -30,31 +30,31 @@ def parse_arguments(parser):
         parser.add_argument(arg)
     parser.add_argument('--mode', type=str, default='train')
     parser.add_argument('--gpu', action="store_true", default=False)
-    parser.add_argument('--seed', type=int, default=42)
+    parser.add_argument('--seed', type=int, default=1234)
     parser.add_argument('--digit2zero', action="store_true", default=True)
-    parser.add_argument('--train_file', type=str, default="data/conll2003/train.txt")
-    parser.add_argument('--dev_file', type=str, default="data/conll2003/dev.txt")
-    parser.add_argument('--test_file', type=str, default="data/conll2003/test.txt")
-    parser.add_argument('--embedding_file', type=str, default="data/glove.6B.100d.txt")
-    # parser.add_argument('--embedding_file', type=str, default=None)
-    parser.add_argument('--embedding_dim', type=int, default=100)
-    parser.add_argument('--optimizer', type=str, default="adam")
+    parser.add_argument('--train_file', type=str, default="data/conll2003/debug.txt")
+    parser.add_argument('--dev_file', type=str, default="data/conll2003/debug_test.txt")
+    parser.add_argument('--test_file', type=str, default="data/conll2003/debug_test.txt")
+    # parser.add_argument('--embedding_file', type=str, default="data/glove.6B.100d.txt")
+    parser.add_argument('--embedding_file', type=str, default=None)
+    parser.add_argument('--embedding_dim', type=int, default=1)
+    parser.add_argument('--optimizer', type=str, default="sgd")
     parser.add_argument('--learning_rate', type=float, default=0.05) ##only for sgd now
     parser.add_argument('--momentum', type=float, default=0.0)
     parser.add_argument('--l2', type=float, default=0.0)
     parser.add_argument('--batch_size', type=int, default=1)
-    parser.add_argument('--num_epochs', type=int, default=30)
+    parser.add_argument('--num_epochs', type=int, default=100)
 
     ##model hyperparameter
     parser.add_argument('--hidden_dim', type=int, default=100, help="hidden size of the LSTM")
-    parser.add_argument('--dropout', type=float, default=0.5, help="dropout for embedding")
+    parser.add_argument('--dropout', type=float, default=0, help="dropout for embedding")
     # parser.add_argument('--tanh_hidden_dim', type=int, default=100)
-    parser.add_argument('--use_char_rnn', type=bool, default=True, help="use character-level lstm")
+    parser.add_argument('--use_char_rnn', type=bool, default=False, help="use character-level lstm")
 
-    parser.add_argument('--train_num', type=int, default=-1)
-    parser.add_argument('--dev_num', type=int, default=-1)
-    parser.add_argument('--test_num', type=int, default=-1)
-    parser.add_argument('--eval_freq', type=int, default=1000,help="evaluate frequency (iteration)")
+    parser.add_argument('--train_num', type=int, default=2)
+    parser.add_argument('--dev_num', type=int, default=2)
+    parser.add_argument('--test_num', type=int, default=2)
+    parser.add_argument('--eval_freq', type=int, default=4000,help="evaluate frequency (iteration)")
     parser.add_argument('--eval_epoch',type=int, default=0, help="evaluate the dev set after this number of epoch")
 
     parser.add_argument("--save_param",type=bool,default=False)
@@ -110,7 +110,11 @@ def train(epoch, insts, dev_insts, test_insts, batch_size = 1):
             end_time = time.time()
         else:
             k = 0
-            for index in np.random.permutation(len(insts)):
+            # for index in np.random.permutation(len(insts)):
+            for index in range(len(insts)):
+                if i == 0:
+                    print("first evaluation")
+                    evaluate(bicrf, dev_insts, test_insts)
                 inst = insts[index]
                 dy.renew_cg()
                 input = inst.input.word_ids
@@ -121,6 +125,9 @@ def train(epoch, insts, dev_insts, test_insts, batch_size = 1):
                 trainer.update()
                 epoch_loss += loss_value
                 k = k + 1
+
+                print("embedding weight: ", bicrf.word_embedding.value())
+                print("linear weight: ", bicrf.linear_w.value())
 
                 if i+1 >= config.eval_epoch and ( k % config.eval_freq == 0 or k == len(insts) ):
                     dev_metrics, test_metrics = evaluate(bicrf, dev_insts, test_insts)
@@ -180,7 +187,8 @@ if __name__ == "__main__":
     config.build_label_idx(train_insts)
 
 
-    config.build_emb_table(reader.train_vocab, reader.test_vocab)
+
+    config.build_emb_table(reader.train_vocab, reader.test_vocab, train_insts + dev_insts + test_insts)
 
     config.find_singleton(train_insts)
     config.map_insts_ids(train_insts)
